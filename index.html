@@ -1,11 +1,62 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <title>효진의 첫 웹페이지</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>내 게임 홍보 사이트</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1e1e2f, #2b2b45);
+      color: #fff;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      padding: 40px 0;
+      background: rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      font-size: 2.5rem;
+    }
+    p {
+      max-width: 600px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+    button {
+      margin-top: 30px;
+      padding: 15px 30px;
+      background: #ff7b00;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover {
+      background: #ff9e2c;
+    }
+    footer {
+      margin-top: 60px;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      font-size: 0.9rem;
+    }
+  </style>
 </head>
 <body>
-  <h1>안녕하세요! 👋</h1>
-  <p>이건 제가 직접 만든 첫 GitHub 웹페이지예요.</p>
+  <header>
+    <h1>🔥 나의 게임: Galactic Runner 🔥</h1>
+    <p>은하계를 질주하며 행성을 구하라! 지금 바로 체험하세요.</p>
+    <button onclick="window.location.href='https://example.com';">
+      게임 플레이하기
+    </button>
+  </header>
+  <footer>
+    © 2025 Hoyjinn Studios | All rights reserved.
+  </footer>
 </body>
 </html>
