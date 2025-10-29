@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Semiconductor vs Metal — Simple Simulation</title>
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif; padding: 18px; max-width: 1100px; margin: auto; }
+  h1 { margin-bottom: 6px; }
+  .controls { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:14px; }
+  .card { border:1px solid #ddd; padding:10px; border-radius:8px; min-width:230px; }
+  label{ display:block; font-size:13px; margin-bottom:6px; }
+  input[type=range] { width:100%; }
+  .status { margin-top:8px; font-size:14px; }
+  #chartContainer { height:360px; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th,td { border:1px solid #ccc; padding:6px; text-align:center; font-size:13px; }
+  button { padding:8px 12px; margin-top:6px; }
+</style>
+</head>
+<body>
+<h1>Semiconductor vs Metal — 시뮬레이션</h1>
+<p>온도를 조절해 금속(저항 증가)과 반도체(온도 증가에 따라 저항 감소)의 정반대 특성을 관찰하세요. 아래 모델은 물리적 근사 모델을 사용합니다.</p>
+
+<div class="controls">
+  <div class="card">
+    <label>온도 (현재): <span id="tempCLabel">20</span> °C</label>
+    <input id="tempSlider" type="range" min="-50" max="200" value="20">
+    <div class="status">
+      <div>금속 저항 R<sub>metal</sub>: <span id="rMetal">—</span> (정규화)</div>
+      <div>반도체 저항 R<sub>semi</sub>: <span id="rSemi">—</span> (정규화)</div>
+      <div>반비: <span id="ratio">—</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>금속 기초 값</label>
+    <div>기준 온도: <input id="metalTref" type="number" value="20" style="width:70px"> °C</div>
+    <div>기준 저항 R₀: <input id="metalR0" type="number" value="1" step="0.1" style="width:70px"></div>
+    <div>온도 계수 α: <input id="metalAlpha" type="number" value="0.004" step="0.0001" style="width:80px"></div>
+  </div>
+
+  <div class="card">
+    <label>반도체 모델</label>
+    <div>기준 온도: <input id="semiTref" type="number" value="20" style="width:70px"> °C</div>
+    <div>기준 저항 Rref: <input id="semiRref" type="number" value="1e3" step="10" style="width:100px"></div>
+    <div>밴드갭 Eg: <input id="semiEg" type="number" value="1.12" step="0.01" style="width:80px"> eV (예: 실리콘 ~1.12 eV)</div>
+  </div>
+
+  <div class="card">
+    <label>그래프 범위</label>
+    <div>온도 최소: <input id="tMin" type="number" value="-50" style="width:75px"> °C</div>
+    <div>온도 최대: <input id="tMax" type="number" value="200" style="width:75px"> °C</div>
+    <button id="redraw">그래프 다시그리기</button>
+    <button id="exportCSV">CSV로 내보내기</button>
+  </div>
+</div>
+
+<div id="chartContainer">
+  <canvas id="resChart"></canvas>
+</div>
+
+<hr>
+
+<h2>LED / 광자 에너지 계산기</h2>
+<p>빛의 파장을 입력하면 광자 에너지(E = hc/λ)를 eV로 계산하고, 임의의 반도체 밴드갭과 비교합니다.</p>
+
+<div style="display:flex; gap:12px; flex-wrap:wrap;">
+  <div class="card" style="min-width:360px;">
+    <label>파장 λ (nm): <input id="lambda" type="number" value="650" style="width:100px"> nm</label>
+    <label>비교 밴드갭 Eg (eV): <input id="compareEg" type="number" value="1.9" step="0.01" style="width:100px"> eV</label>
+    <button id="calcPhoton">계산</button>
+    <div class="status" id="photonResult"></div>
+  </div>
+
+  <div class="card" style="flex:1;">
+    <label>간단한 LED 색상 표 (원하면 수정)</label>
+    <table id="ledTable">
+      <thead><tr><th>색상</th><th>파장 (nm)</th><th>광자에너지 (eV)</th><th>문턱전압 ≈ Eg/e (V)</th></tr></thead>
+      <tbody>
+        <tr><td>Red</td><td>650</td><td>—</td><td>—</td></tr>
+        <tr><td>Green</td><td>530</td><td>—</td><td>—</td></tr>
+        <tr><td>Blue</td><td>470</td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <button id="fillTable">표 채우기</button>
+  </div>
+</div>
+
+<script>
+// 물리 상수
+const kB_eV_per_K = 8.617333262145e-5; // Boltzmann constant [eV/K]
+const hc_eVnm = 1240.0; // hc in eV·nm
+
+// DOM
+const tempSlider = document.getElementById('tempSlider');
+const tempCLabel = document.getElementById('tempCLabel');
+const rMetalSpan = document.getElementById('rMetal');
+const rSemiSpan = document.getElementById('rSemi');
+const ratioSpan = document.getElementById('ratio');
+
+const metalTref = document.getElementById('metalTref');
+const metalR0 = document.getElementById('metalR0');
+const metalAlpha = document.getElementById('metalAlpha');
+
+const semiTref = document.getElementById('semiTref');
+const semiRref = document.getElementById('semiRref');
+const semiEg = document.getElementById('semiEg');
+
+const tMin = document.getElementById('tMin');
+const tMax = document.getElementById('tMax');
+const redrawBtn = document.getElementById('redraw');
+const exportCSV = document.getElementById('exportCSV');
+
+function cToK(tC){ return Number(tC) + 273.15; }
+
+// 모델 함수
+function metalResistance(T_C, R0, Tref_C, alpha){
+  // 선형 근사: R = R0 * (1 + alpha*(T - Tref))
+  return R0 * (1 + alpha * (T_C - Tref_C));
+}
+
+function semiResistance(T_C, Rref, Tref_C, Eg_eV){
+  // 반도체 근사: R ∝ exp( Eg/(2 k_B T) )
+  // 정규화를 위해 기준온도에서 Rref가 되도록:
+  const T = cToK(T_C);
+  const Tref = cToK(Tref_C);
+  const exponent = (Eg_eV / (2 * kB_eV_per_K)) * (1.0 / T - 1.0 / Tref);
+  return Rref * Math.exp(exponent);
+}
+
+// 차트 초기화
+const ctx = document.getElementById('resChart').getContext('2d');
+let resChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: [], // temperatures
+    datasets: [
+      { label: 'Metal (정규화)', data: [], borderWidth: 2, fill:false, tension:0.2 },
+      { label: 'Semiconductor (정규화)', data: [], borderWidth: 2, fill:false, tension:0.2 }
+    ]
+  },
+  options: {
+    animation: false,
+    scales: {
+      x: { title: { display:true, text:'Temperature (°C)' } },
+      y: { title: { display:true, text:'Relative Resistance (arb. units, log scale shown)' }, type: 'logarithmic', min: 1e-3 }
+    },
+    plugins: { legend: { position:'top' } }
+  }
+});
+
+function generateData(){
+  const tmin = Number(tMin.value);
+  const tmax = Number(tMax.value);
+  const steps = 200;
+  const temps = [];
+  for(let i=0;i<=steps;i++){
+    temps.push(tmin + (tmax - tmin) * i / steps);
+  }
+
+  const mR0 = Number(metalR0.value);
+  const mTref = Number(metalTref.value);
+  const mAlpha = Number(metalAlpha.value);
+
+  const sRref = Number(semiRref.value);
+  const sTref = Number(semiTref.value);
+  const sEg = Number(semiEg.value);
+
+  const metalData = temps.map(t => metalResistance(t, mR0, mTref, mAlpha));
+  const semiData = temps.map(t => semiResistance(t, sRref, sTref, sEg));
+
+  return {temps, metalData, semiData};
+}
+
+function updateChart(){
+  const {temps, metalData, semiData} = generateData();
+  resChart.data.labels = temps.map(t => t.toFixed(1));
+  resChart.data.datasets[0].data = metalData;
+  resChart.data.datasets[1].data = semiData;
+  // auto scale y min
+  resChart.update();
+
+  // update current values
+  const Tcur = Number(tempSlider.value);
+  tempCLabel.textContent = Tcur;
+  const rM = metalResistance(Tcur, Number(metalR0.value), Number(metalTref.value), Number(metalAlpha.value));
+  const rS = semiResistance(Tcur, Number(semiRref.value), Number(semiTref.value), Number(semiEg.value));
+  rMetalSpan.textContent = rM.toExponential(3);
+  rSemiSpan.textContent = rS.toExponential(3);
+  ratioSpan.textContent = (rS / rM).toExponential(3);
+}
+
+// 이벤트
+tempSlider.addEventListener('input', updateChart);
+redrawBtn.addEventListener('click', updateChart);
+
+exportCSV.addEventListener('click', ()=>{
+  const {temps, metalData, semiData} = generateData();
+  let csv = 'Temperature(°C),R_metal,R_semi\n';
+  for(let i=0;i<temps.length;i++){
+    csv += `${temps[i].toFixed(2)},${metalData[i]},${semiData[i]}\n`;
+  }
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'resistance_vs_temperature.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// photon calculator
+document.getElementById('calcPhoton').addEventListener('click', ()=>{
+  const lambda = Number(document.getElementById('lambda').value);
+  if(!lambda || lambda <= 0){ document.getElementById('photonResult').textContent = '올바른 파장을 입력하세요.'; return; }
+  const E_eV = hc_eVnm / lambda;
+  const EgComp = Number(document.getElementById('compareEg').value);
+  const thresholdV = EgComp; // eV corresponds to ~V (since 1 eV = 1 elementary charge*1 V)
+  let text = `파장 ${lambda} nm → 광자 에너지 E = ${E_eV.toFixed(3)} eV. `;
+  text += `비교 밴드갭 Eg = ${EgComp} eV → 문턱 전압(대략) ${thresholdV.toFixed(3)} V. `;
+  text += (E_eV >= EgComp) ? '광자 에너지가 밴드갭 이상이므로 광전 효과/발광(가능성)이 있습니다.' : '광자 에너지가 밴드갭보다 작아 직접적인 전자-정공 재결합에 의한 발광은 어렵습니다.';
+  document.getElementById('photonResult').textContent = text;
+});
+
+// LED table fill
+document.getElementById('fillTable').addEventListener('click', ()=>{
+  const tbody = document.querySelector('#ledTable tbody');
+  for(const row of tbody.rows){
+    const lambda = Number(row.cells[1].textContent);
+    const E = hc_eVnm / lambda;
+    row.cells[2].textContent = E.toFixed(3);
+    row.cells[3].textContent = E.toFixed(3) + ' V';
+  }
+});
+
+// 초기 그리기
+updateChart();
+</script>
+</body>
+</html>
